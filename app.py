@@ -1,3 +1,5 @@
+import os
+import gdown
 import streamlit as st
 import numpy as np
 import tensorflow as tf
@@ -7,21 +9,56 @@ import matplotlib.pyplot as plt
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing import image
 
-# === Updated paths for all models ===
-MODEL_PATHS = {
-    "VGG16": r"C:\Alzheimer project\model_outputs\vgg16_stream_kfoldfinetuned\fold_5\finetuned_model.keras",
-    "ResNet50": r"C:\Alzheimer project\model_outputs\resnet50_stream_kfold_finetuned\fold_5\finetuned_model.keras",
-    "DenseNet121": r"C:\Alzheimer project\model_outputs\densenet121_final\best_model.keras",
-    "EfficientNetV2S": r"C:\Alzheimer project\model_outputs\efficientnetv2s_final\best_model.keras"
+# ---------- cloud-download + cached model loader ----------
+MODEL_FILENAMES = {
+    "VGG16": "vgg16_model.keras",
+    "ResNet50": "resnet50_model.keras",
+    "DenseNet121": "densenet121_model.keras",
+    "EfficientNetV2S": "efficientnetv2s_model.keras"
 }
 
-# === Lazy load model cache ===
+MODEL_DIR = "models"
+os.makedirs(MODEL_DIR, exist_ok=True)
+
 _loaded_models = {}
+
+def _get_secret_key_for(model_name):
+    return f"{model_name.upper()}_URL"  # e.g. VGG16_URL
+
+def download_model_if_needed(model_name):
+    local_path = os.path.join(MODEL_DIR, MODEL_FILENAMES[model_name])
+    if os.path.exists(local_path):
+        return local_path
+
+    secret_key = _get_secret_key_for(model_name)
+    if secret_key not in st.secrets:
+        raise RuntimeError(
+            f"Secret '{secret_key}' not found. Add it to .streamlit/secrets.toml (local) or Streamlit Cloud secrets."
+        )
+    
+    url = st.secrets[secret_key]
+    st.info(f"Downloading {model_name} model — this may take a minute on first run.")
+
+    try:
+        gdown.download(url, local_path, quiet=False)
+    except Exception as e:
+        import re
+        m = re.search(r'/d/([^/]+)', url)
+        if m:
+            file_id = m.group(1)
+            gdown.download(f"https://drive.google.com/uc?id={file_id}", local_path, quiet=False)
+        else:
+            raise RuntimeError(f"Failed to download {model_name}: {e}")
+    return local_path
+
+@st.cache_resource
 def get_model(model_name):
     if model_name not in _loaded_models:
-        st.write(f"Loading {model_name} model…")
-        _loaded_models[model_name] = load_model(MODEL_PATHS[model_name])
+        local_path = download_model_if_needed(model_name)
+        st.write(f"Loading {model_name} model from {local_path} …")
+        _loaded_models[model_name] = load_model(local_path)
     return _loaded_models[model_name]
+# ---------- end loader ----------
 
 # === Class labels ===
 label_map = {0: "Mild Dementia", 1: "Moderate Dementia", 2: "Non Demented"}
@@ -68,7 +105,7 @@ def overlay_heatmap(original_img, heatmap, alpha=0.4):
     return cv2.addWeighted(original_img, 1 - alpha, heatmap_colored, alpha, 0)
 
 # === Streamlit GUI ===
-st.title(" Alzheimer’s MRI Classifier with VizGradCAM Explainability")
+st.title("🧠 Alzheimer’s MRI Classifier with VizGradCAM Explainability")
 st.write("Upload an MRI slice, select a model or Ensemble, and see predictions with averaged Grad-CAM heatmaps.")
 
 # Model selector
@@ -136,4 +173,3 @@ if uploaded_file is not None:
 
     if model_choice.startswith("Ensemble"):
         st.warning("Ensemble Grad-CAM = averaged heatmaps from all 4 models.")
-
