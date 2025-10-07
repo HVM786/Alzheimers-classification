@@ -105,7 +105,7 @@ def overlay_heatmap(original_img, heatmap, alpha=0.4):
     return cv2.addWeighted(original_img, 1 - alpha, heatmap_colored, alpha, 0)
 
 # === Streamlit GUI ===
-st.title("🧠 Alzheimer’s MRI Classifier with VizGradCAM Explainability")
+st.title(" Alzheimer’s MRI Classifier with VizGradCAM Explainability")
 st.write("Upload an MRI slice, select a model or Ensemble, and see predictions with averaged Grad-CAM heatmaps.")
 
 # Model selector
